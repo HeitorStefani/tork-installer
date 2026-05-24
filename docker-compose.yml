@@ -1,0 +1,88 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-kanban}
+      POSTGRES_USER: ${POSTGRES_USER:-kanban}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kanban_change_me}
+    volumes:
+      - kanban-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-kanban} -d ${POSTGRES_DB:-kanban}"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: ./backend
+    environment:
+      PORT: 8080
+      DATABASE_URL: postgresql://${POSTGRES_USER:-kanban}:${POSTGRES_PASSWORD:-kanban_change_me}@postgres:5432/${POSTGRES_DB:-kanban}
+      KANBAN_API_KEY: ${KANBAN_API_KEY:-change-me-kanban-api-key}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8090}
+      CHATWOOT_BASE_URL: ${CHATWOOT_BASE_URL:-}
+      CHATWOOT_API_TOKEN: ${CHATWOOT_API_TOKEN:-}
+      CHATWOOT_DATABASE_URL: ${CHATWOOT_DATABASE_URL:-}
+      CHATWOOT_STORAGE_PATH: /chatwoot-storage
+      CHATWOOT_WEBHOOK_SECRET: ${CHATWOOT_WEBHOOK_SECRET:-}
+      CHATWOOT_ASSIGNEE_SYNC_SECONDS: ${CHATWOOT_ASSIGNEE_SYNC_SECONDS:-5}
+      DEFAULT_ACCOUNT_ID: ${DEFAULT_ACCOUNT_ID:-1}
+      DEFAULT_BOARD_NAME: ${DEFAULT_BOARD_NAME:-Atendimento IA}
+      FOLLOW_UP_AFTER_HOURS: ${FOLLOW_UP_AFTER_HOURS:-24}
+      LOST_AFTER_ATTEMPTS: ${LOST_AFTER_ATTEMPTS:-2}
+      MAX_JSON_BODY_BYTES: ${MAX_JSON_BODY_BYTES:-262144}
+      RATE_LIMIT_WINDOW_MS: ${RATE_LIMIT_WINDOW_MS:-60000}
+      RATE_LIMIT_MAX_REQUESTS: ${RATE_LIMIT_MAX_REQUESTS:-600}
+      CORS_ORIGIN: ${CORS_ORIGIN:-*}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - chatwoot-storage:/chatwoot-storage:ro
+    networks:
+      default:
+      rede-infra:
+        aliases:
+          - kanban-ia-backend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8080/ready >/dev/null 2>&1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+    environment:
+      KANBAN_API_KEY: ${KANBAN_API_KEY:-change-me-kanban-api-key}
+      FRONTEND_ACCOUNT_ID: ${DEFAULT_ACCOUNT_ID:-1}
+    ports:
+      - "${KANBAN_HTTP_PORT:-8090}:80"
+    depends_on:
+      - backend
+    networks:
+      default:
+      rede-infra:
+        aliases:
+          - kanban-ia-frontend
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/health >/dev/null 2>&1"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+volumes:
+  kanban-postgres-data:
+  chatwoot-storage:
+    external: true
+    name: chatwoot_chatwoot-storage
+
+networks:
+  rede-infra:
+    external: true

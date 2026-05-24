@@ -1,0 +1,63 @@
+services:
+  chatwoot-postgres:
+    image: {{POSTGRES_IMAGE}}
+    environment:
+      POSTGRES_DB: {{CHATWOOT_POSTGRES_DB}}
+      POSTGRES_USER: {{CHATWOOT_POSTGRES_USER}}
+      POSTGRES_PASSWORD: "{{CHATWOOT_POSTGRES_PASSWORD}}"
+    volumes:
+      - chatwoot-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U {{CHATWOOT_POSTGRES_USER}} -d {{CHATWOOT_POSTGRES_DB}}"]
+      interval: 10s
+      timeout: 5s
+      retries: 8
+    restart: unless-stopped
+    networks:
+      - {{NETWORK}}
+
+  chatwoot-redis:
+    image: {{REDIS_IMAGE}}
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - chatwoot-redis-data:/data
+    restart: unless-stopped
+    networks:
+      - {{NETWORK}}
+
+  chatwoot:
+    image: {{CHATWOOT_IMAGE}}
+    depends_on:
+      chatwoot-postgres:
+        condition: service_healthy
+      chatwoot-redis:
+        condition: service_started
+    environment:
+      RAILS_ENV: production
+      NODE_ENV: production
+      INSTALLATION_ENV: docker
+      SECRET_KEY_BASE: "{{CHATWOOT_SECRET_KEY_BASE}}"
+      FRONTEND_URL: "https://{{CHATWOOT_DOMAIN}}"
+      POSTGRES_HOST: chatwoot-postgres
+      POSTGRES_DATABASE: {{CHATWOOT_POSTGRES_DB}}
+      POSTGRES_USERNAME: {{CHATWOOT_POSTGRES_USER}}
+      POSTGRES_PASSWORD: "{{CHATWOOT_POSTGRES_PASSWORD}}"
+      REDIS_URL: redis://chatwoot-redis:6379
+    volumes:
+      - chatwoot-storage:/app/storage
+    restart: unless-stopped
+    networks:
+      {{NETWORK}}:
+        aliases:
+          - {{CLIENT_ID}}-chatwoot
+          - chatwoot
+
+volumes:
+  chatwoot-postgres-data:
+  chatwoot-redis-data:
+  chatwoot-storage:
+    name: {{CHATWOOT_STORAGE_VOLUME}}
+
+networks:
+  {{NETWORK}}:
+    external: true

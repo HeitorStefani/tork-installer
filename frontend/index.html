@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kanban IA</title>
+    <style>
+      [hidden] {
+        display: none !important;
+      }
+    </style>
+    <link rel="stylesheet" href="./styles.css?v=20260522-03" />
+    <script>
+      window.KANBAN_CONFIG = window.KANBAN_CONFIG || {
+        apiBaseUrl: "/api/v1",
+        apiKey: "",
+        accountId: 1,
+      };
+    </script>
+    <script src="/config.js"></script>
+  </head>
+  <body>
+    <div class="app">
+      <header class="topbar">
+        <div class="board-title">
+          <span id="board-name">Kanban IA</span>
+          <span class="count" id="board-count">0</span>
+        </div>
+
+        <label class="search">
+          <span aria-hidden="true">S</span>
+          <input id="search" placeholder="Buscar conversa, servico ou telefone" />
+        </label>
+
+        <div class="actions">
+          <button class="filter-btn" id="agent-filter" type="button" onclick="window.KanbanUI?.filterAgent()">Todos os agentes</button>
+          <button class="filter-btn" id="inbox-filter" type="button" onclick="window.KanbanUI?.filterInbox()">Todas as caixas</button>
+          <button class="filter-btn" id="followup-button" type="button" onclick="window.KanbanUI?.openFollowUp()">Follow-up</button>
+          <button class="filter-btn" id="docs-button" type="button" onclick="window.KanbanUI?.openDocs()">API Key</button>
+          <button class="icon-btn" id="refresh" type="button" title="Atualizar" aria-label="Atualizar" onclick="window.KanbanUI?.reload()">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12a8 8 0 0 1-13.7 5.7l1.4-1.4A6 6 0 0 0 18 12h-3l4-4 4 4h-3ZM4 12A8 8 0 0 1 17.7 6.3l-1.4 1.4A6 6 0 0 0 6 12h3l-4 4-4-4h3Z"/></svg>
+          </button>
+          <button class="icon-btn" id="board-settings" type="button" title="Editar funil" aria-label="Editar funil" onclick="window.KanbanUI?.openFunnel()">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-13ZM6.5 5a.5.5 0 0 0-.5.5V9h12V5.5a.5.5 0 0 0-.5-.5h-11ZM6 11v7.5a.5.5 0 0 0 .5.5H10v-8H6Zm6 8h5.5a.5.5 0 0 0 .5-.5V11h-6v8Z"/></svg>
+          </button>
+          <button class="add-btn" id="add-card" type="button" onclick="window.KanbanUI?.openCard()">+ Adicionar tarefa</button>
+        </div>
+      </header>
+
+      <div class="status" id="status" hidden></div>
+      <main class="board" id="board" aria-live="polite"></main>
+    </div>
+
+    <div class="modal-backdrop" id="modal-backdrop" hidden>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header">
+          <h2 id="modal-title">Editar</h2>
+          <button class="icon-btn" id="modal-close" type="button" title="Fechar">x</button>
+        </div>
+        <div class="modal-body" id="modal-body"></div>
+      </section>
+    </div>
+
+    <script type="module" src="./app.js?v=20260522-03"></script>
+  </body>
+</html>

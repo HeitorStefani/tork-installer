@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "product": "tork-automation",
+  "version": "0.1.0",
+  "generatedAt": "2026-05-22T00:00:00.000Z",
+  "license": {
+    "mode": "local-dev",
+    "customerId": "local",
+    "installationId": "local-dev",
+    "expiresAt": null,
+    "features": [
+      "kanban",
+      "chatwoot",
+      "n8n",
+      "proxy"
+    ]
+  },
+  "images": {
+    "kanbanBackend": "kanban-ia-test-backend:latest",
+    "kanbanFrontend": "kanban-ia-test-frontend:latest",
+    "chatwoot": "chatwoot/chatwoot:latest",
+    "n8n": "n8nio/n8n:latest",
+    "postgres": "postgres:16-alpine",
+    "redis": "redis:7-alpine",
+    "proxy": "jc21/nginx-proxy-manager:latest"
+  },
+  "defaults": {
+    "installDir": "/opt/tork-automation",
+    "network": "tork-infra",
+    "kanbanDomain": "kanban.example.com",
+    "chatwootDomain": "chatwoot.example.com",
+    "n8nDomain": "n8n.example.com",
+    "kanbanHttpPort": 8090,
+    "proxyHttpPort": 80,
+    "proxyHttpsPort": 443,
+    "proxyAdminPort": 81
+  },
+  "stacks": {
+    "kanban": {
+      "required": true,
+      "composeTemplate": "templates/tork-stack/docker-compose.kanban.yml"
+    },
+    "proxy": {
+      "required": false,
+      "composeTemplate": "templates/tork-stack/docker-compose.proxy.yml"
+    },
+    "chatwoot": {
+      "required": false,
+      "composeTemplate": "templates/tork-stack/docker-compose.chatwoot.yml"
+    },
+    "n8n": {
+      "required": false,
+      "composeTemplate": "templates/tork-stack/docker-compose.n8n.yml"
+    }
+  }
+}

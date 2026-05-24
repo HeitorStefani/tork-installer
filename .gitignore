@@ -1,0 +1,39 @@
+.DS_Store
+
+# Local environment and secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+*secret*
+*token*
+
+# Generated local central files
+central/data/
+central/local-central.env
+central/start-local-central.sh
+central/LOCAL_CENTRAL_READY.txt
+
+# Generated packages and local installer artifacts
+dist/
+
+# VPS/customer backups
+vps-rescue-backups/
+backups/
+*.tgz
+*.tar.gz
+*.sql
+*.sql.gz
+
+# Runtime output
+node_modules/
+coverage/
+logs/
+*.log
+.tork-state.json
+generated/
+
+# Editor/system
+.vscode/
+.idea/
