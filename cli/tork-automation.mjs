@@ -12,6 +12,7 @@ const defaultManifestPath = path.join(repoRoot, "manifests", "tork-stack.local.j
 const defaultInstallDir = "/opt/tork-automation";
 const cliVersion = "0.2.0";
 const defaultClientId = "principal";
+const defaultBaseDomain = "sistemasautomacao.store";
 
 function parseArgs(argv) {
   const args = { command: "", flags: {}, install: [] };
@@ -77,6 +78,21 @@ function defaultKanbanPortForClient(clientId, fallback = 8090) {
   let hash = 0;
   for (const char of slug) hash = (hash * 31 + char.charCodeAt(0)) % 800;
   return 8100 + hash;
+}
+
+function normalizeBaseDomain(value, fallback = defaultBaseDomain) {
+  return String(value || fallback)
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/\/.*$/, "")
+    .replace(/^\.+|\.+$/g, "") || fallback;
+}
+
+function serviceDomain(service, clientId, baseDomain) {
+  const slug = slugifyClientId(clientId);
+  const prefix = slug === defaultClientId ? service : `${service}-${slug}`;
+  return `${prefix}.${normalizeBaseDomain(baseDomain)}`;
 }
 
 function requireSafeKey(key) {
@@ -207,6 +223,7 @@ function baseValues(manifest, answers = {}) {
   const manifestClientId = manifest.license?.mode === "central" ? manifest.license.customerId : defaults.clientId || defaultClientId;
   const clientId = slugifyClientId(answers.clientId || manifestClientId);
   const clientName = answers.clientName || defaults.clientName || clientId;
+  const baseDomain = normalizeBaseDomain(answers.baseDomain || defaults.baseDomain || defaultBaseDomain);
   const projectName = answers.projectName || defaults.projectName || composeProjectNameForClient(clientId);
   const volumePrefix = volumePrefixForClient(clientId);
   const defaultNetwork = clientId === defaultClientId
@@ -220,11 +237,12 @@ function baseValues(manifest, answers = {}) {
   return {
     CLIENT_ID: clientId,
     CLIENT_NAME: clientName,
+    BASE_DOMAIN: baseDomain,
     PROJECT_NAME: projectName,
     NETWORK: answers.network || defaultNetwork,
-    KANBAN_DOMAIN: answers.kanbanDomain || defaults.kanbanDomain,
-    CHATWOOT_DOMAIN: answers.chatwootDomain || defaults.chatwootDomain,
-    N8N_DOMAIN: answers.n8nDomain || defaults.n8nDomain,
+    KANBAN_DOMAIN: answers.kanbanDomain || serviceDomain("kanban", clientId, baseDomain),
+    CHATWOOT_DOMAIN: answers.chatwootDomain || serviceDomain("chatwoot", clientId, baseDomain),
+    N8N_DOMAIN: answers.n8nDomain || serviceDomain("n8n", clientId, baseDomain),
     KANBAN_HTTP_PORT: answers.kanbanHttpPort || defaultKanbanPortForClient(clientId, defaultKanbanHttpPort),
     PROXY_HTTP_PORT: answers.proxyHttpPort || defaults.proxyHttpPort || 80,
     PROXY_HTTPS_PORT: answers.proxyHttpsPort || defaults.proxyHttpsPort || 443,
@@ -283,6 +301,7 @@ async function collectAnswers(manifest, flags) {
   const manifestClientId = manifest.license?.mode === "central" ? manifest.license.customerId : defaults.clientId || defaultClientId;
   const clientId = slugifyClientId(flags.clientId || manifestClientId);
   const clientName = flags.clientName || defaults.clientName || clientId;
+  const baseDomain = normalizeBaseDomain(flags.baseDomain || defaults.baseDomain || defaultBaseDomain);
   const baseInstallDir = flags.baseInstallDir || defaults.installDir || defaultInstallDir;
   const defaultNetwork = clientId === defaultClientId
     ? defaults.network || networkNameForClient(clientId)
@@ -294,12 +313,13 @@ async function collectAnswers(manifest, flags) {
   const answers = {
     clientId,
     clientName,
+    baseDomain,
     projectName: flags.projectName || defaults.projectName || composeProjectNameForClient(clientId),
     network: flags.network || defaultNetwork,
     installDir: flags.installDir || defaultInstallDirForClient(clientId, baseInstallDir),
-    kanbanDomain: flags.kanbanDomain || defaults.kanbanDomain,
-    chatwootDomain: flags.chatwootDomain || defaults.chatwootDomain,
-    n8nDomain: flags.n8nDomain || defaults.n8nDomain,
+    kanbanDomain: flags.kanbanDomain || serviceDomain("kanban", clientId, baseDomain),
+    chatwootDomain: flags.chatwootDomain || serviceDomain("chatwoot", clientId, baseDomain),
+    n8nDomain: flags.n8nDomain || serviceDomain("n8n", clientId, baseDomain),
     kanbanHttpPort: flags.kanbanHttpPort || defaultKanbanHttpPort,
   };
 
@@ -338,6 +358,7 @@ const color = {
   cyan: useColor ? "\u001b[36m" : "",
   green: useColor ? "\u001b[32m" : "",
   yellow: useColor ? "\u001b[33m" : "",
+  blue: useColor ? "\u001b[34m" : "",
 };
 
 function paint(value, style) {
@@ -350,7 +371,7 @@ function panel(title, rows = []) {
   const line = `+${"-".repeat(width - 2)}+`;
   console.log("");
   console.log(paint(line, color.cyan));
-  console.log(paint(`| ${title.padEnd(width - 4)} |`, color.cyan));
+  console.log(paint(`| ${title.padEnd(width - 4)} |`, color.cyan + color.bold));
   console.log(paint(line, color.cyan));
   for (const row of cleanRows) console.log(`| ${row.padEnd(width - 4)} |`);
   console.log(paint(line, color.cyan));
@@ -358,7 +379,7 @@ function panel(title, rows = []) {
 
 function section(title) {
   console.log("");
-  console.log(paint(`== ${title}`, color.bold));
+  console.log(paint(`-- ${title}`, color.blue + color.bold));
 }
 
 async function createPromptSession() {
@@ -395,14 +416,16 @@ async function createPromptSession() {
 
 async function askValue(rl, label, defaultValue = "") {
   const suffix = defaultValue ? ` [${defaultValue}]` : "";
-  const answer = await rl.question(`${label}${suffix}: `);
+  const answer = await rl.question(`${paint("?", color.green)} ${label}${suffix}: `);
   return answer.trim() || defaultValue;
 }
 
 async function askChoice(rl, label, choices, defaultKey = choices[0]?.key) {
   for (const choice of choices) {
-    const marker = choice.key === defaultKey ? "*" : " ";
-    console.log(`${marker} ${choice.key}. ${choice.label}`);
+    const marker = choice.key === defaultKey ? ">" : " ";
+    const key = choice.key.padStart(2, " ");
+    const line = `${marker} ${key}. ${choice.label}`;
+    console.log(choice.key === defaultKey ? paint(line, color.green) : line);
   }
   const answer = await askValue(rl, label, defaultKey);
   const selected = choices.find((choice) => choice.key === answer);
@@ -907,9 +930,9 @@ async function wizardCommand(args) {
 
   try {
     panel("Tork Automation", [
-      "Assistente visual para preparar uma VPS do zero.",
-      "Gera secrets, compose, rede Docker e sobe as stacks escolhidas.",
-      "Use dry-run para validar sem subir containers.",
+      `Assistente visual para preparar uma VPS do zero. v${cliVersion}`,
+      "Instala clientes isolados com Docker Compose, rede e secrets proprios.",
+      `Dominio base padrao: ${defaultBaseDomain}`,
     ]);
 
     section("Origem");
@@ -931,6 +954,7 @@ async function wizardCommand(args) {
     flags.clientId = slugifyClientId(await askValue(rl, "ID curto do cliente", flags.clientId || slugifyClientId(flags.clientName)));
     flags.projectName = await askValue(rl, "Projeto Docker Compose", flags.projectName || composeProjectNameForClient(flags.clientId));
     flags.network = await askValue(rl, "Rede Docker isolada", flags.network || networkNameForClient(flags.clientId));
+    flags.baseDomain = normalizeBaseDomain(await askValue(rl, "Dominio base", flags.baseDomain || defaults.baseDomain || defaultBaseDomain));
 
     section("Destino");
     flags.installDir = await askValue(
@@ -960,14 +984,14 @@ async function wizardCommand(args) {
     const stackNames = selectedStackNamesFromPreset(preset);
     section("Dominios");
     if (stackNames.includes("kanban")) {
-      flags.kanbanDomain = await askValue(rl, "Dominio do Kanban", flags.kanbanDomain || defaults.kanbanDomain || "kanban.seudominio.com");
+      flags.kanbanDomain = await askValue(rl, "Dominio do Kanban", flags.kanbanDomain || serviceDomain("kanban", flags.clientId, flags.baseDomain));
       flags.kanbanHttpPort = await askValue(rl, "Porta HTTP local do Kanban", flags.kanbanHttpPort || defaultKanbanPortForClient(flags.clientId, defaults.kanbanHttpPort || 8090));
     }
     if (stackNames.includes("chatwoot")) {
-      flags.chatwootDomain = await askValue(rl, "Dominio do Chatwoot", flags.chatwootDomain || defaults.chatwootDomain || "chatwoot.seudominio.com");
+      flags.chatwootDomain = await askValue(rl, "Dominio do Chatwoot", flags.chatwootDomain || serviceDomain("chatwoot", flags.clientId, flags.baseDomain));
     }
     if (stackNames.includes("n8n")) {
-      flags.n8nDomain = await askValue(rl, "Dominio do n8n", flags.n8nDomain || defaults.n8nDomain || "n8n.seudominio.com");
+      flags.n8nDomain = await askValue(rl, "Dominio do n8n", flags.n8nDomain || serviceDomain("n8n", flags.clientId, flags.baseDomain));
     }
     if (flags.newClient && !stackNames.includes("proxy")) {
       const proxyChoice = await askChoice(rl, "Conectar proxy existente nessa rede", [
@@ -988,10 +1012,14 @@ async function wizardCommand(args) {
     panel("Resumo", [
       `Origem: ${source.key === "1" ? "central" : "local/GitHub"}`,
       `Cliente: ${flags.clientName} (${flags.clientId})`,
+      `Dominio base: ${flags.baseDomain}`,
       `Projeto Docker: ${flags.projectName}`,
       `Rede Docker: ${flags.network}`,
       `Instalacao: ${flags.installDir}`,
       `Stacks: ${preset.label}`,
+      ...(flags.kanbanDomain ? [`Kanban: ${flags.kanbanDomain}`] : []),
+      ...(flags.chatwootDomain ? [`Chatwoot: ${flags.chatwootDomain}`] : []),
+      ...(flags.n8nDomain ? [`n8n: ${flags.n8nDomain}`] : []),
       `Proxy existente: ${flags.connectProxy ? "conectar automaticamente" : "nao alterar"}`,
       `Modo: ${flags.dryRun ? "dry-run" : "instalar agora"}`,
     ]);

@@ -58,7 +58,7 @@ const wizardOutput = runWithInput([
   "manifests/tork-stack.local.json",
   "--installDir",
   "/private/tmp/tork-cli-wizard-test",
-], "2\n\n\n\n\n\n1\n\n\n\n\n2\n1\n");
+], "2\n\n\n\n\n\n\n1\n\n\n\n\n2\n1\n");
 assert(wizardOutput.includes("Assistente visual"), "wizard must render visual setup");
 assert(wizardOutput.includes("[dry-run] docker compose"), "wizard dry-run must generate compose plan");
 
@@ -103,12 +103,14 @@ assert(kanban.includes("principal-kanban-frontend"), "kanban compose must includ
 const clientKanban = await fs.readFile(path.join(clientInstallDir, "generated", "kanban.compose.yml"), "utf8");
 assert(clientKanban.includes("tork-cliente-acme-infra"), "client compose must use an isolated network");
 assert(clientKanban.includes("cliente-acme-kanban-frontend"), "client compose must include isolated aliases");
+assert(clientKanban.includes("https://kanban-cliente-acme.sistemasautomacao.store"), "client compose must derive Kanban domain from base domain");
 assert(clientKanban.includes('"8181:80"'), "client compose must honor custom Kanban port");
 
 const env = await fs.readFile(path.join(installDir, ".env"), "utf8");
 assert(env.includes("KANBAN_API_KEY="), ".env must include generated Kanban API key");
 assert(env.includes("N8N_ENCRYPTION_KEY="), ".env must include generated n8n encryption key");
 assert(env.includes("PROJECT_NAME=tork-principal"), ".env must include compose project name");
+assert(env.includes("BASE_DOMAIN=sistemasautomacao.store"), ".env must include base domain");
 
 const backupOutput = run([
   "backup",

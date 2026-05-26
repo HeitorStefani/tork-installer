@@ -108,6 +108,14 @@ tork-automation
 
 Ele abre o painel visual com instalacao, configuracao, status, backup, update, rollback, heartbeat e comandos da central.
 
+O dominio base padrao do assistente e `sistemasautomacao.store`. Para um cliente `clinica-a`, ele sugere:
+
+```text
+kanban-clinica-a.sistemasautomacao.store
+chatwoot-clinica-a.sistemasautomacao.store
+n8n-clinica-a.sistemasautomacao.store
+```
+
 ## Mais de um cliente na mesma VPS
 
 Use o menu:
@@ -122,7 +130,7 @@ Depois escolha:
 2. Configurar novo cliente nesta VPS
 ```
 
-Esse caminho pede nome do cliente, ID curto, projeto Docker Compose, rede Docker isolada, diretorio proprio, dominios e porta HTTP local do Kanban.
+Esse caminho pede nome do cliente, ID curto, projeto Docker Compose, rede Docker isolada, dominio base, diretorio proprio, dominios e porta HTTP local do Kanban.
 
 Para instalar direto sem passar pelo menu:
 
@@ -130,11 +138,9 @@ Para instalar direto sem passar pelo menu:
 tork-automation install \
   --clientId clinica-a \
   --clientName "Clinica A" \
+  --baseDomain sistemasautomacao.store \
   --installDir /opt/tork-automation/clients/clinica-a \
   --stack chatwoot,n8n,kanban \
-  --kanbanDomain kanban.clinica-a.com \
-  --chatwootDomain chatwoot.clinica-a.com \
-  --n8nDomain n8n.clinica-a.com \
   --kanbanHttpPort 8181 \
   --connectProxy \
   --yes
@@ -311,6 +317,7 @@ O comando `install` tambem aceita:
 
 - `--clientId`: ID curto do cliente. Ele vira slug automaticamente, exemplo `Clinica A` vira `clinica-a`.
 - `--clientName`: nome amigavel do cliente.
+- `--baseDomain`: dominio base para gerar subdominios, padrao `sistemasautomacao.store`.
 - `--projectName`: nome do projeto Docker Compose. Se ausente, usa `tork-CLIENTE`.
 - `--network`: rede Docker. Se ausente para cliente novo, usa `tork-CLIENTE-infra`.
 - `--kanbanHttpPort`: porta local do Kanban para evitar conflito entre clientes.

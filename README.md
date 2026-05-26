@@ -4,6 +4,14 @@ Instalador de terminal para provisionar Kanban, Chatwoot, n8n e Nginx Proxy Mana
 
 O objetivo e rodar um comando, abrir um menu visual no terminal e configurar uma VPS do zero, incluindo suporte a mais de um cliente na mesma VPS.
 
+O dominio base padrao do assistente e `sistemasautomacao.store`. Para um cliente `clinica-a`, ele sugere automaticamente:
+
+```text
+kanban-clinica-a.sistemasautomacao.store
+chatwoot-clinica-a.sistemasautomacao.store
+n8n-clinica-a.sistemasautomacao.store
+```
+
 ## Uso rapido
 
 Depois de hospedar este repositorio no GitHub:
