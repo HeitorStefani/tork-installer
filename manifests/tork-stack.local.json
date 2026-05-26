@@ -21,6 +21,7 @@
     "chatwoot": "chatwoot/chatwoot:v4.11.1",
     "n8n": "n8nio/n8n:latest",
     "postgres": "postgres:16-alpine",
+    "chatwootPostgres": "pgvector/pgvector:pg16",
     "redis": "redis:7-alpine",
     "proxy": "jc21/nginx-proxy-manager:latest"
   },

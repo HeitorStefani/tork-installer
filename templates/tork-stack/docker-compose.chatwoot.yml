@@ -1,6 +1,6 @@
 services:
   chatwoot-postgres:
-    image: {{POSTGRES_IMAGE}}
+    image: {{CHATWOOT_POSTGRES_IMAGE}}
     environment:
       POSTGRES_DB: {{CHATWOOT_POSTGRES_DB}}
       POSTGRES_USER: {{CHATWOOT_POSTGRES_USER}}

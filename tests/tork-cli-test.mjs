@@ -126,6 +126,7 @@ assert(kanban.includes("principal-kanban-frontend"), "kanban compose must includ
 assert(chatwoot.includes("chatwoot-prepare:"), "chatwoot compose must include database prepare service");
 assert(chatwoot.includes("chatwoot-sidekiq:"), "chatwoot compose must include sidekiq service");
 assert(chatwoot.includes("docker/entrypoints/rails.sh"), "chatwoot web service must use Rails entrypoint");
+assert(chatwoot.includes("image: pgvector/pgvector:pg16"), "chatwoot postgres must include pgvector extension");
 
 const clientKanban = await fs.readFile(path.join(clientInstallDir, "generated", "kanban.compose.yml"), "utf8");
 assert(clientKanban.includes("tork-cliente-acme-infra"), "client compose must use an isolated network");
