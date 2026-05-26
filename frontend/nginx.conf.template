@@ -9,7 +9,6 @@ server {
   add_header Pragma "no-cache" always;
   add_header Expires "0" always;
   add_header X-Content-Type-Options "nosniff" always;
-  add_header X-Frame-Options "SAMEORIGIN" always;
   add_header Referrer-Policy "no-referrer" always;
   add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
 
