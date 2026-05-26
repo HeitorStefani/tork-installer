@@ -42,6 +42,14 @@ Depois da instalacao:
 tork-automation
 ```
 
+Depois de subir Chatwoot + Kanban, o embed no Chatwoot pode ser aplicado pelo menu ou pelo comando:
+
+```sh
+tork-automation embed-chatwoot --installDir /opt/tork-automation
+```
+
+Esse comando configura os Proxy Hosts no Nginx Proxy Manager, emite/reusa SSL e injeta o script do Kanban no HTML do Chatwoot.
+
 ## Desenvolvimento local
 
 ```sh

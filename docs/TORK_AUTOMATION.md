@@ -18,6 +18,7 @@ node cli/tork-automation.mjs menu
 node cli/tork-automation.mjs wizard
 node cli/tork-automation.mjs install --yes --dryRun --full
 node cli/tork-automation.mjs install --yes --dryRun --stack kanban
+node cli/tork-automation.mjs embed-chatwoot --installDir /private/tmp/tork-cli-test --dryRun --proxyContainer nginx-proxy
 node cli/tork-automation.mjs backup --installDir /private/tmp/tork-cli-test
 node cli/tork-automation.mjs update --installDir /private/tmp/tork-cli-test --dryRun
 node cli/tork-automation.mjs heartbeat --installDir /private/tmp/tork-cli-test --centralUrl http://127.0.0.1:8095 --key TORK-XXXX-XXXX --dryRun
@@ -170,6 +171,41 @@ clinica-a-n8n             : 5678
 ```
 
 Isso evita que dois clientes na mesma VPS disputem nomes internos como `chatwoot`, `n8n` ou `kanban-frontend`.
+
+## Embed do Kanban no Chatwoot
+
+Depois que a stack com Chatwoot e Kanban estiver de pe, aplique o embed pelo menu:
+
+```text
+7. Embedar Kanban no Chatwoot
+```
+
+Ou pelo comando direto:
+
+```sh
+tork-automation embed-chatwoot --installDir /opt/tork-automation
+```
+
+O comando:
+
+- cria ou atualiza os Proxy Hosts no Nginx Proxy Manager;
+- emite ou reutiliza um certificado Let's Encrypt para os dominios do cliente;
+- injeta `https://DOMINIO_DO_KANBAN/dashboard-script.js` no HTML do Chatwoot;
+- registra o resultado em `.tork-state.json`.
+
+Se houver mais de um Nginx Proxy Manager na VPS, informe o container:
+
+```sh
+tork-automation embed-chatwoot \
+  --installDir /opt/tork-automation/clients/clinica-a \
+  --proxyContainer nginx-proxy
+```
+
+Para validar sem alterar o NPM:
+
+```sh
+tork-automation embed-chatwoot --installDir /opt/tork-automation --dryRun
+```
 
 ### Via central/pacote
 
