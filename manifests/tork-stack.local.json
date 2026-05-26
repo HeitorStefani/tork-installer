@@ -18,7 +18,7 @@
   "images": {
     "kanbanBackend": "kanban-ia-test-backend:latest",
     "kanbanFrontend": "kanban-ia-test-frontend:latest",
-    "chatwoot": "chatwoot/chatwoot:latest",
+    "chatwoot": "chatwoot/chatwoot:v4.11.1",
     "n8n": "n8nio/n8n:latest",
     "postgres": "postgres:16-alpine",
     "redis": "redis:7-alpine",

@@ -117,11 +117,15 @@ for (const file of generated) {
 }
 
 const kanban = await fs.readFile(path.join(installDir, "generated", "kanban.compose.yml"), "utf8");
+const chatwoot = await fs.readFile(path.join(installDir, "generated", "chatwoot.compose.yml"), "utf8");
 assert(kanban.includes('CORS_ORIGIN: "*"'), "CORS wildcard must be quoted");
 assert(kanban.includes("healthcheck:"), "kanban compose must include healthchecks");
 assert(kanban.includes("context: ../backend"), "kanban backend must build from packaged source");
 assert(kanban.includes("context: ../frontend"), "kanban frontend must build from packaged source");
 assert(kanban.includes("principal-kanban-frontend"), "kanban compose must include a client-specific frontend alias");
+assert(chatwoot.includes("chatwoot-prepare:"), "chatwoot compose must include database prepare service");
+assert(chatwoot.includes("chatwoot-sidekiq:"), "chatwoot compose must include sidekiq service");
+assert(chatwoot.includes("docker/entrypoints/rails.sh"), "chatwoot web service must use Rails entrypoint");
 
 const clientKanban = await fs.readFile(path.join(clientInstallDir, "generated", "kanban.compose.yml"), "utf8");
 assert(clientKanban.includes("tork-cliente-acme-infra"), "client compose must use an isolated network");
