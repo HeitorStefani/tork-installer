@@ -87,6 +87,15 @@ TORK_GITHUB_REF='main' \
 sh /tmp/tork-install.sh
 ```
 
+Se o ambiente nao tiver `curl`, use `wget`:
+
+```sh
+wget -O /tmp/tork-install.sh https://raw.githubusercontent.com/SUA_ORG/SEU_REPO/main/install.sh
+TORK_GITHUB_REPO='SUA_ORG/SEU_REPO' \
+TORK_GITHUB_REF='main' \
+sh /tmp/tork-install.sh
+```
+
 Esse comando instala dependencias, instala o `tork-automation` e abre o painel no terminal quando houver TTY. Para repositorio privado, informe `TORK_GITHUB_TOKEN`.
 
 Evite `curl ... | sh` quando quiser abrir o menu visual automaticamente, porque o pipe ocupa o stdin do shell. Baixar o arquivo para `/tmp` e rodar `sh /tmp/tork-install.sh` preserva o terminal para o assistente.

@@ -16,6 +16,16 @@ TORK_GITHUB_REF='main' \
 sh /tmp/tork-install.sh
 ```
 
+Se o ambiente nao tiver `curl`, use `wget`:
+
+```sh
+wget -O /tmp/tork-install.sh https://raw.githubusercontent.com/SUA_ORG/SEU_REPO/main/install.sh
+
+TORK_GITHUB_REPO='SUA_ORG/SEU_REPO' \
+TORK_GITHUB_REF='main' \
+sh /tmp/tork-install.sh
+```
+
 Depois da instalacao:
 
 ```sh

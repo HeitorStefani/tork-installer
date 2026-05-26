@@ -54,14 +54,35 @@ command_exists() {
   command -v "$1" >/dev/null 2>&1
 }
 
+download() {
+  url="$1"
+  output="$2"
+  if command_exists curl; then
+    curl -fsSL "$url" -o "$output"
+    return
+  fi
+  if command_exists wget; then
+    wget -q -O "$output" "$url"
+    return
+  fi
+  fail "Nao encontrei curl nem wget para baixar $url."
+}
+
 github_download() {
   url="$1"
   output="$2"
   if [ -n "${TORK_GITHUB_TOKEN:-}" ]; then
-    curl -fsSL -H "Authorization: Bearer $TORK_GITHUB_TOKEN" "$url" -o "$output"
-  else
-    curl -fsSL "$url" -o "$output"
+    if command_exists curl; then
+      curl -fsSL -H "Authorization: Bearer $TORK_GITHUB_TOKEN" "$url" -o "$output"
+      return
+    fi
+    if command_exists wget; then
+      wget -q --header "Authorization: Bearer $TORK_GITHUB_TOKEN" -O "$output" "$url"
+      return
+    fi
+    fail "Nao encontrei curl nem wget para baixar repositorio privado."
   fi
+  download "$url" "$output"
 }
 
 node_major() {
@@ -76,12 +97,28 @@ detect_apt() {
   command_exists apt-get
 }
 
+detect_apk() {
+  command_exists apk
+}
+
 install_apt_base() {
   log "Instalando pacotes base"
   as_root apt-get update
   as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y \
     ca-certificates \
     curl \
+    git \
+    tar \
+    gzip \
+    openssl
+}
+
+install_apk_base() {
+  log "Instalando pacotes base com apk"
+  as_root apk add --no-cache \
+    ca-certificates \
+    curl \
+    wget \
     git \
     tar \
     gzip \
@@ -98,8 +135,13 @@ install_node() {
   if detect_apt; then
     curl -fsSL https://deb.nodesource.com/setup_20.x | as_root bash -
     as_root env DEBIAN_FRONTEND=noninteractive apt-get install -y nodejs
+  elif detect_apk; then
+    as_root apk add --no-cache nodejs npm
+    if [ "$(node_major)" -lt 20 ] 2>/dev/null; then
+      fail "Node.js instalado via apk e menor que 20. Use uma imagem Alpine mais nova ou instale Node.js 20+ manualmente."
+    fi
   else
-    fail "Sistema sem apt-get. Instale Node.js 20+ manualmente."
+    fail "Sistema sem apt-get/apk. Instale Node.js 20+ manualmente."
   fi
 }
 
@@ -116,8 +158,12 @@ install_docker() {
       install_compose_plugin_binary
     fi
     as_root systemctl enable --now docker >/dev/null 2>&1 || true
+  elif detect_apk; then
+    as_root apk add --no-cache docker docker-cli-compose
+    as_root rc-update add docker default >/dev/null 2>&1 || true
+    as_root service docker start >/dev/null 2>&1 || true
   else
-    fail "Sistema sem apt-get. Instale Docker e docker compose manualmente."
+    fail "Sistema sem apt-get/apk. Instale Docker e docker compose manualmente."
   fi
 
   if ! docker compose version >/dev/null 2>&1; then
@@ -141,7 +187,7 @@ install_compose_plugin_binary() {
   url="https://github.com/docker/compose/releases/download/$TORK_COMPOSE_VERSION/docker-compose-linux-$arch"
   log "Instalando Docker Compose $TORK_COMPOSE_VERSION ($arch)"
   as_root mkdir -p "$plugin_dir"
-  curl -fsSL "$url" -o /tmp/tork-docker-compose
+  download "$url" /tmp/tork-docker-compose
   as_root install -m 0755 /tmp/tork-docker-compose "$plugin_path"
   rm -f /tmp/tork-docker-compose
 }
@@ -167,8 +213,10 @@ install_dependencies() {
 
   if detect_apt; then
     install_apt_base
+  elif detect_apk; then
+    install_apk_base
   else
-    warn "apt-get nao encontrado; vou validar dependencias existentes."
+    warn "apt-get/apk nao encontrado; vou validar dependencias existentes."
   fi
 
   install_node
@@ -185,10 +233,10 @@ find_source_dir() {
 
   if [ -n "${TORK_PACKAGE_URL:-}" ]; then
     log "Baixando pacote $TORK_PACKAGE_URL"
-    curl -fsSL "$TORK_PACKAGE_URL" -o "$TMP_DIR/tork-package.tgz"
+    download "$TORK_PACKAGE_URL" "$TMP_DIR/tork-package.tgz"
     checksum_url="${TORK_PACKAGE_SHA256_URL:-$TORK_PACKAGE_URL.sha256}"
     log "Validando pacote com $checksum_url"
-    curl -fsSL "$checksum_url" -o "$TMP_DIR/tork-package.tgz.sha256"
+    download "$checksum_url" "$TMP_DIR/tork-package.tgz.sha256"
     (cd "$TMP_DIR" && verify_checksum_file "tork-package.tgz.sha256" >&2)
     tar -xzf "$TMP_DIR/tork-package.tgz" -C "$TMP_DIR"
     found="$(find "$TMP_DIR" -maxdepth 3 -type d -name cli 2>/dev/null | head -n 1 | xargs dirname)"
