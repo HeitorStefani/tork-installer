@@ -80,6 +80,13 @@ function defaultKanbanPortForClient(clientId, fallback = 8090) {
   return 8100 + hash;
 }
 
+function boolFlag(value, defaultValue = false) {
+  if (value === undefined) return defaultValue;
+  if (value === true || value === false) return value;
+  if (["0", "false", "no", "nao", "não", "off"].includes(String(value).toLowerCase())) return false;
+  return true;
+}
+
 function normalizeBaseDomain(value, fallback = defaultBaseDomain) {
   return String(value || fallback)
     .trim()
@@ -93,6 +100,11 @@ function serviceDomain(service, clientId, baseDomain) {
   const slug = slugifyClientId(clientId);
   const prefix = slug === defaultClientId ? service : `${service}-${slug}`;
   return `${prefix}.${normalizeBaseDomain(baseDomain)}`;
+}
+
+function kanbanPortsBlock(port, expose) {
+  if (!expose) return "";
+  return `ports:\n      - "${port}:80"`;
 }
 
 function requireSafeKey(key) {
@@ -233,6 +245,9 @@ function baseValues(manifest, answers = {}) {
   const chatwootWebhookSecret = answers.chatwootWebhookSecret || randomSecret(24);
   const chatwootStorageVolume = answers.chatwootStorageVolume || `${volumePrefix}_chatwoot-storage`;
   const defaultKanbanHttpPort = defaults.kanbanHttpPort || 8090;
+  const kanbanHttpPort = answers.kanbanHttpPort || defaultKanbanPortForClient(clientId, defaultKanbanHttpPort);
+  const sharedProxy = boolFlag(answers.sharedProxy, false);
+  const exposeKanbanPort = boolFlag(answers.exposeKanbanPort, !sharedProxy);
 
   return {
     CLIENT_ID: clientId,
@@ -243,7 +258,10 @@ function baseValues(manifest, answers = {}) {
     KANBAN_DOMAIN: answers.kanbanDomain || serviceDomain("kanban", clientId, baseDomain),
     CHATWOOT_DOMAIN: answers.chatwootDomain || serviceDomain("chatwoot", clientId, baseDomain),
     N8N_DOMAIN: answers.n8nDomain || serviceDomain("n8n", clientId, baseDomain),
-    KANBAN_HTTP_PORT: answers.kanbanHttpPort || defaultKanbanPortForClient(clientId, defaultKanbanHttpPort),
+    KANBAN_HTTP_PORT: kanbanHttpPort,
+    KANBAN_PORTS_BLOCK: kanbanPortsBlock(kanbanHttpPort, exposeKanbanPort),
+    SHARED_PROXY: sharedProxy ? "1" : "0",
+    EXPOSE_KANBAN_PORT: exposeKanbanPort ? "1" : "0",
     PROXY_HTTP_PORT: answers.proxyHttpPort || defaults.proxyHttpPort || 80,
     PROXY_HTTPS_PORT: answers.proxyHttpsPort || defaults.proxyHttpsPort || 443,
     PROXY_ADMIN_PORT: answers.proxyAdminPort || defaults.proxyAdminPort || 81,
@@ -321,6 +339,8 @@ async function collectAnswers(manifest, flags) {
     chatwootDomain: flags.chatwootDomain || serviceDomain("chatwoot", clientId, baseDomain),
     n8nDomain: flags.n8nDomain || serviceDomain("n8n", clientId, baseDomain),
     kanbanHttpPort: flags.kanbanHttpPort || defaultKanbanHttpPort,
+    sharedProxy: boolFlag(flags.sharedProxy, false),
+    exposeKanbanPort: boolFlag(flags.exposeKanbanPort, !boolFlag(flags.sharedProxy, false) && !boolFlag(flags.noExposePorts, false)),
   };
 
   if (nonInteractive) return answers;
@@ -515,16 +535,24 @@ function ensureDockerNetwork(network, dryRun) {
   }
 }
 
+function detectedProxyContainers() {
+  const result = spawnSync("docker", ["ps", "--format", "{{.Names}}"], {
+    stdio: "pipe",
+    encoding: "utf8",
+  });
+  if (result.status !== 0) return [];
+  return result.stdout
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((name) => /(^|[-_])(proxy|nginx-proxy-manager|npm)([-_]|$)/i.test(name));
+}
+
 function connectProxyContainers(network, dryRun) {
   if (dryRun) {
     console.log(`[dry-run] conectar proxy existente na rede ${network}`);
     return;
   }
-  const raw = run("docker", ["ps", "--format", "{{.Names}}"], { capture: true });
-  const proxies = raw
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter((name) => /(^|[-_])(proxy|nginx-proxy-manager|npm)([-_]|$)/i.test(name));
+  const proxies = detectedProxyContainers();
   for (const container of proxies) {
     const result = spawnSync("docker", ["network", "connect", network, container], {
       stdio: "pipe",
@@ -538,6 +566,43 @@ function connectProxyContainers(network, dryRun) {
     console.log(`Proxy conectado na rede ${network}: ${proxies.join(", ")}`);
   } else {
     console.log(`Nenhum container de proxy encontrado para conectar na rede ${network}.`);
+  }
+}
+
+function proxyRoutesForStacks(values, stacks) {
+  const routes = [];
+  if (stacks.includes("kanban")) {
+    routes.push({
+      domain: values.KANBAN_DOMAIN,
+      target: `${values.CLIENT_ID}-kanban-frontend`,
+      port: 80,
+    });
+  }
+  if (stacks.includes("chatwoot")) {
+    routes.push({
+      domain: values.CHATWOOT_DOMAIN,
+      target: `${values.CLIENT_ID}-chatwoot`,
+      port: 3000,
+    });
+  }
+  if (stacks.includes("n8n")) {
+    routes.push({
+      domain: values.N8N_DOMAIN,
+      target: `${values.CLIENT_ID}-n8n`,
+      port: 5678,
+    });
+  }
+  return routes;
+}
+
+function printSharedProxyInstructions(values, stacks) {
+  const routes = proxyRoutesForStacks(values, stacks);
+  if (!routes.length) return;
+  console.log("");
+  console.log("Nginx Proxy Manager compartilhado:");
+  console.log(`- Rede conectada: ${values.NETWORK}`);
+  for (const route of routes) {
+    console.log(`- ${route.domain} -> http://${route.target}:${route.port}`);
   }
 }
 
@@ -642,6 +707,7 @@ async function installCommand(args) {
   if (dryRun) {
     if (args.flags.connectProxy) connectProxyContainers(values.NETWORK, true);
     console.log(`[dry-run] docker compose ${dockerComposeArgs(rendered.composeFiles, ["up", "-d"], projectName).join(" ")}`);
+    if (values.SHARED_PROXY === "1") printSharedProxyInstructions(values, stacks);
     await writeState(installDir, {
       installedAt: new Date().toISOString(),
       installDir,
@@ -649,6 +715,8 @@ async function installCommand(args) {
       clientName: values.CLIENT_NAME,
       projectName,
       network: values.NETWORK,
+      sharedProxy: values.SHARED_PROXY === "1",
+      exposeKanbanPort: values.EXPOSE_KANBAN_PORT === "1",
       manifestVersion: manifest.version,
       stacks,
       composeFiles: rendered.composeFiles,
@@ -659,6 +727,7 @@ async function installCommand(args) {
 
   if (args.flags.connectProxy) connectProxyContainers(values.NETWORK, false);
   run("docker", ["compose", ...dockerComposeArgs(rendered.composeFiles, ["up", "-d"], projectName)]);
+  if (values.SHARED_PROXY === "1") printSharedProxyInstructions(values, stacks);
   await writeState(installDir, {
     installedAt: new Date().toISOString(),
     installDir,
@@ -666,6 +735,8 @@ async function installCommand(args) {
     clientName: values.CLIENT_NAME,
     projectName,
     network: values.NETWORK,
+    sharedProxy: values.SHARED_PROXY === "1",
+    exposeKanbanPort: values.EXPOSE_KANBAN_PORT === "1",
     manifestVersion: manifest.version,
     stacks,
     composeFiles: rendered.composeFiles,
@@ -927,12 +998,15 @@ async function wizardCommand(args) {
   const rl = await createPromptSession();
   const flags = { ...args.flags };
   let preset = stackPreset("full");
+  const proxyContainers = detectedProxyContainers();
+  const hasSharedProxy = proxyContainers.length > 0;
 
   try {
     panel("Tork Automation", [
       `Assistente visual para preparar uma VPS do zero. v${cliVersion}`,
       "Instala clientes isolados com Docker Compose, rede e secrets proprios.",
       `Dominio base padrao: ${defaultBaseDomain}`,
+      hasSharedProxy ? `Proxy existente detectado: ${proxyContainers.join(", ")}` : "Proxy existente detectado: nao",
     ]);
 
     section("Origem");
@@ -964,6 +1038,9 @@ async function wizardCommand(args) {
     );
 
     section("Stacks");
+    if (hasSharedProxy) {
+      console.log(paint("Proxy compartilhado recomendado nesta VPS: use a opcao 2 para nao disputar portas 80/443/81.", color.yellow));
+    }
     const stackChoice = await askChoice(rl, "Escolha", [
       { key: "1", label: "Stack completa: proxy + Chatwoot + n8n + Kanban" },
       { key: "2", label: "Cliente completo: Chatwoot + n8n + Kanban, usando proxy existente" },
@@ -971,7 +1048,7 @@ async function wizardCommand(args) {
       { key: "4", label: "Chatwoot + Kanban" },
       { key: "5", label: "Somente n8n" },
       { key: "6", label: "Somente Nginx Proxy Manager" },
-    ], flags.newClient ? "2" : "1");
+    ], flags.newClient || hasSharedProxy ? "2" : "1");
     preset = stackPreset({
       "1": "full",
       "2": "client-full",
@@ -982,6 +1059,7 @@ async function wizardCommand(args) {
     }[stackChoice.key]);
 
     const stackNames = selectedStackNamesFromPreset(preset);
+    const canUseSharedProxy = !stackNames.includes("proxy");
     section("Dominios");
     if (stackNames.includes("kanban")) {
       flags.kanbanDomain = await askValue(rl, "Dominio do Kanban", flags.kanbanDomain || serviceDomain("kanban", flags.clientId, flags.baseDomain));
@@ -993,12 +1071,17 @@ async function wizardCommand(args) {
     if (stackNames.includes("n8n")) {
       flags.n8nDomain = await askValue(rl, "Dominio do n8n", flags.n8nDomain || serviceDomain("n8n", flags.clientId, flags.baseDomain));
     }
-    if (flags.newClient && !stackNames.includes("proxy")) {
+    if (canUseSharedProxy) {
       const proxyChoice = await askChoice(rl, "Conectar proxy existente nessa rede", [
         { key: "1", label: "Sim, tentar conectar automaticamente" },
         { key: "2", label: "Nao, farei manualmente" },
-      ], "1");
+      ], hasSharedProxy ? "1" : "2");
       flags.connectProxy = proxyChoice.key === "1";
+      flags.sharedProxy = flags.connectProxy;
+      flags.exposeKanbanPort = !flags.connectProxy;
+    } else if (hasSharedProxy) {
+      console.log(paint("Aviso: esta opcao tenta subir outro Nginx Proxy Manager. Se 80/443/81 ja estiverem ocupadas, o compose vai falhar.", color.yellow));
+      flags.sharedProxy = false;
     }
 
     section("Execucao");
@@ -1017,6 +1100,7 @@ async function wizardCommand(args) {
       `Rede Docker: ${flags.network}`,
       `Instalacao: ${flags.installDir}`,
       `Stacks: ${preset.label}`,
+      `Proxy compartilhado: ${flags.sharedProxy ? "sim" : "nao"}`,
       ...(flags.kanbanDomain ? [`Kanban: ${flags.kanbanDomain}`] : []),
       ...(flags.chatwootDomain ? [`Chatwoot: ${flags.chatwootDomain}`] : []),
       ...(flags.n8nDomain ? [`n8n: ${flags.n8nDomain}`] : []),
@@ -1238,7 +1322,7 @@ async function menuCommand(args) {
     panel("Tork Automation", [
       "1. Assistente visual de instalacao/configuracao da VPS",
       "2. Configurar novo cliente nesta VPS",
-      "3. Instalar stack completa rapidamente",
+      "3. Instalar stack completa em VPS zerada",
       "4. Instalar apenas Kanban",
       "5. Instalar Chatwoot + Kanban",
       "6. Instalar n8n",

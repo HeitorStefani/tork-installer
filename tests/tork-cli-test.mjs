@@ -5,6 +5,7 @@ import { spawnSync } from "node:child_process";
 const root = path.resolve(path.dirname(new URL(import.meta.url).pathname), "..");
 const installDir = "/private/tmp/tork-cli-test";
 const clientInstallDir = "/private/tmp/tork-cli-client-test";
+const sharedProxyInstallDir = "/private/tmp/tork-cli-shared-proxy-test";
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);
@@ -36,6 +37,7 @@ function runWithInput(args, input) {
 await fs.rm(installDir, { recursive: true, force: true });
 await fs.rm("/private/tmp/tork-cli-wizard-test", { recursive: true, force: true });
 await fs.rm(clientInstallDir, { recursive: true, force: true });
+await fs.rm(sharedProxyInstallDir, { recursive: true, force: true });
 
 const version = run(["version"]);
 assert(version.includes("0.2.0"), "version output must include version");
@@ -82,6 +84,27 @@ const clientOutput = run([
 assert(clientOutput.includes("Cliente: Cliente Acme (cliente-acme)"), "client install must show isolated client id");
 assert(clientOutput.includes("--project-name tork-cliente-acme"), "client install must use an isolated compose project");
 
+const sharedProxyOutput = run([
+  "install",
+  "--yes",
+  "--dryRun",
+  "--manifest",
+  "manifests/tork-stack.local.json",
+  "--installDir",
+  sharedProxyInstallDir,
+  "--clientId",
+  "Cliente Proxy",
+  "--clientName",
+  "Cliente Proxy",
+  "--stack",
+  "kanban",
+  "--kanbanHttpPort",
+  "8182",
+  "--sharedProxy",
+  "--connectProxy",
+]);
+assert(sharedProxyOutput.includes("Nginx Proxy Manager compartilhado"), "shared proxy install must print proxy routes");
+
 const generated = await fs.readdir(path.join(installDir, "generated"));
 assert(generated.includes("kanban.compose.yml"), "kanban compose must be generated");
 assert(generated.includes("chatwoot.compose.yml"), "chatwoot compose must be generated");
@@ -105,6 +128,10 @@ assert(clientKanban.includes("tork-cliente-acme-infra"), "client compose must us
 assert(clientKanban.includes("cliente-acme-kanban-frontend"), "client compose must include isolated aliases");
 assert(clientKanban.includes("https://kanban-cliente-acme.sistemasautomacao.store"), "client compose must derive Kanban domain from base domain");
 assert(clientKanban.includes('"8181:80"'), "client compose must honor custom Kanban port");
+
+const sharedProxyKanban = await fs.readFile(path.join(sharedProxyInstallDir, "generated", "kanban.compose.yml"), "utf8");
+assert(!sharedProxyKanban.includes('"8182:80"'), "shared proxy compose must not publish Kanban host port");
+assert(sharedProxyKanban.includes("cliente-proxy-kanban-frontend"), "shared proxy compose must keep internal frontend alias");
 
 const env = await fs.readFile(path.join(installDir, ".env"), "utf8");
 assert(env.includes("KANBAN_API_KEY="), ".env must include generated Kanban API key");

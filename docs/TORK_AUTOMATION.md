@@ -132,6 +132,20 @@ Depois escolha:
 
 Esse caminho pede nome do cliente, ID curto, projeto Docker Compose, rede Docker isolada, dominio base, diretorio proprio, dominios e porta HTTP local do Kanban.
 
+Em VPS que ja possui Nginx Proxy Manager rodando, use a opcao:
+
+```text
+Cliente completo: Chatwoot + n8n + Kanban, usando proxy existente
+```
+
+Nesse modo, o instalador nao sobe outro proxy e nao publica a porta do Kanban no host. Ele conecta o Nginx Proxy Manager existente na rede Docker do cliente e imprime os destinos internos para criar os Proxy Hosts:
+
+```text
+kanban-clinica-a.sistemasautomacao.store   -> http://clinica-a-kanban-frontend:80
+chatwoot-clinica-a.sistemasautomacao.store -> http://clinica-a-chatwoot:3000
+n8n-clinica-a.sistemasautomacao.store      -> http://clinica-a-n8n:5678
+```
+
 Para instalar direto sem passar pelo menu:
 
 ```sh
@@ -142,6 +156,7 @@ tork-automation install \
   --installDir /opt/tork-automation/clients/clinica-a \
   --stack chatwoot,n8n,kanban \
   --kanbanHttpPort 8181 \
+  --sharedProxy \
   --connectProxy \
   --yes
 ```
@@ -321,6 +336,8 @@ O comando `install` tambem aceita:
 - `--projectName`: nome do projeto Docker Compose. Se ausente, usa `tork-CLIENTE`.
 - `--network`: rede Docker. Se ausente para cliente novo, usa `tork-CLIENTE-infra`.
 - `--kanbanHttpPort`: porta local do Kanban para evitar conflito entre clientes.
+- `--sharedProxy`: nao publica porta do Kanban no host e prepara rotas internas para Nginx Proxy Manager existente.
+- `--noExposePorts`: nao publica porta do Kanban, mesmo sem `--sharedProxy`.
 - `--connectProxy`: tenta conectar um proxy existente na rede isolada do cliente.
 
 ## Backup, update e rollback

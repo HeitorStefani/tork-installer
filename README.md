@@ -12,6 +12,8 @@ chatwoot-clinica-a.sistemasautomacao.store
 n8n-clinica-a.sistemasautomacao.store
 ```
 
+Em VPS com Nginx Proxy Manager ja instalado, use o modo de proxy compartilhado. O instalador conecta o proxy existente na rede do cliente e imprime as rotas internas, sem ocupar novas portas publicas no host.
+
 ## Uso rapido
 
 Depois de hospedar este repositorio no GitHub:

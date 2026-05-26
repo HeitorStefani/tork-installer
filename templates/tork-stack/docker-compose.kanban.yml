@@ -66,8 +66,7 @@ services:
     environment:
       KANBAN_API_KEY: "{{KANBAN_API_KEY}}"
       FRONTEND_ACCOUNT_ID: {{DEFAULT_ACCOUNT_ID}}
-    ports:
-      - "{{KANBAN_HTTP_PORT}}:80"
+    {{KANBAN_PORTS_BLOCK}}
     depends_on:
       - kanban-backend
     healthcheck:
