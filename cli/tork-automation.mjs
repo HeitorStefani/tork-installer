@@ -381,6 +381,7 @@ const color = {
   green: useColor ? "\u001b[32m" : "",
   yellow: useColor ? "\u001b[33m" : "",
   blue: useColor ? "\u001b[34m" : "",
+  magenta: useColor ? "\u001b[35m" : "",
 };
 
 function paint(value, style) {
@@ -397,6 +398,20 @@ function panel(title, rows = []) {
   console.log(paint(line, color.cyan));
   for (const row of cleanRows) console.log(`| ${row.padEnd(width - 4)} |`);
   console.log(paint(line, color.cyan));
+}
+
+function banner(subtitle = "CLI para automacao de VPS") {
+  const art = [
+    " _______  ___   ____   _  __",
+    "|_   _|/ _ \\ |  _ \\ | |/ /",
+    "  | | | | | || |_) || ' / ",
+    "  | | | |_| ||  _ < | . \\ ",
+    "  |_|  \\___/ |_| \\_\\|_|\\_\\",
+  ];
+  console.log("");
+  for (const line of art) console.log(paint(line, color.cyan + color.bold));
+  console.log(paint(`Tork Automation ${cliVersion}`, color.magenta + color.bold));
+  console.log(paint(subtitle, color.blue));
 }
 
 function section(title) {
@@ -597,6 +612,149 @@ function proxyRoutesForStacks(values, stacks) {
   return routes;
 }
 
+function chatwootEmbedAdvancedConfig(kanbanDomain) {
+  const scriptUrl = `https://${kanbanDomain}/dashboard-script.js`;
+  return [
+    "# Tork Automation: Kanban embed no Chatwoot",
+    'proxy_set_header Accept-Encoding "";',
+    "proxy_hide_header Content-Security-Policy;",
+    "proxy_hide_header Content-Security-Policy-Report-Only;",
+    "sub_filter_once on;",
+    "sub_filter_types text/html;",
+    `sub_filter '</body>' '<script src=\"${scriptUrl}\" defer></script></body>';`,
+  ].join("\n");
+}
+
+function npmProxyProvisionScript({ routes, useSsl = true }) {
+  return `
+import fs from "node:fs";
+import Certificate from "/app/models/certificate.js";
+import ProxyHost from "/app/models/proxy_host.js";
+import User from "/app/models/user.js";
+import internalCertificate from "/app/internal/certificate.js";
+import internalNginx from "/app/internal/nginx.js";
+
+const routes = ${JSON.stringify(routes, null, 2)};
+const useSsl = ${JSON.stringify(Boolean(useSsl))};
+const domains = routes.map((route) => route.domain).filter(Boolean);
+
+function sqlDateFromEpoch(seconds) {
+  return new Date(seconds * 1000).toISOString().replace("T", " ").slice(0, 19);
+}
+
+function sameDomains(a, b) {
+  return JSON.stringify([...a].sort()) === JSON.stringify([...b].sort());
+}
+
+const user = await User.query()
+  .where("is_deleted", 0)
+  .andWhere("is_disabled", 0)
+  .orderBy("id")
+  .first();
+
+if (!user?.email && useSsl) {
+  throw new Error("NPM precisa de um usuario ativo com email para emitir SSL");
+}
+
+let certificate = null;
+if (useSsl && domains.length) {
+  const existingCerts = await Certificate.query().where("is_deleted", 0);
+  certificate = existingCerts.find((row) => {
+    return row.provider === "letsencrypt" && sameDomains(row.domain_names || [], domains);
+  });
+
+  if (!certificate || !fs.existsSync(\`\${internalCertificate.getLiveCertPath(certificate.id)}/fullchain.pem\`)) {
+    certificate = await Certificate.query().insertAndFetch({
+      owner_user_id: user.id,
+      provider: "letsencrypt",
+      nice_name: domains.join(", "),
+      domain_names: domains,
+      meta: {
+        letsencrypt_agree: true,
+        dns_challenge: false,
+      },
+    });
+
+    try {
+      await internalNginx.generateLetsEncryptRequestConfig(certificate);
+      await internalNginx.reload();
+      await internalCertificate.requestLetsEncryptSsl(certificate, user.email);
+      await internalNginx.deleteLetsEncryptRequestConfig(certificate);
+      await internalNginx.reload();
+
+      const certInfo = await internalCertificate.getCertificateInfoFromFile(
+        \`\${internalCertificate.getLiveCertPath(certificate.id)}/fullchain.pem\`,
+      );
+
+      certificate = await Certificate.query().patchAndFetchById(certificate.id, {
+        expires_on: sqlDateFromEpoch(certInfo.dates.to),
+        meta: {
+          ...certificate.meta,
+          letsencrypt_certificate: certInfo,
+        },
+      });
+    } catch (error) {
+      await internalNginx.deleteLetsEncryptRequestConfig(certificate).catch(() => {});
+      await Certificate.query().patchAndFetchById(certificate.id, { is_deleted: 1 }).catch(() => {});
+      await internalNginx.reload().catch(() => {});
+      throw error;
+    }
+  }
+}
+
+const allHosts = await ProxyHost.query().where("is_deleted", 0);
+const configured = [];
+
+for (const route of routes) {
+  const existing = allHosts.find((row) => {
+    return Array.isArray(row.domain_names) && row.domain_names.includes(route.domain);
+  });
+
+  const payload = {
+    owner_user_id: user?.id || 1,
+    domain_names: [route.domain],
+    forward_scheme: "http",
+    forward_host: route.target,
+    forward_port: route.port,
+    access_list_id: 0,
+    certificate_id: certificate?.id || existing?.certificate_id || 0,
+    ssl_forced: Boolean(certificate),
+    caching_enabled: false,
+    block_exploits: true,
+    advanced_config: route.advancedConfig || "",
+    meta: {},
+    allow_websocket_upgrade: true,
+    http2_support: Boolean(certificate),
+    enabled: true,
+    locations: [],
+    hsts_enabled: false,
+    hsts_subdomains: false,
+    trust_forwarded_proto: false,
+  };
+
+  const row = existing
+    ? await ProxyHost.query().patchAndFetchById(existing.id, payload)
+    : await ProxyHost.query().insertAndFetch(payload);
+
+  const hydrated = await ProxyHost.query()
+    .findById(row.id)
+    .withGraphFetched("[certificate,access_list]");
+
+  await internalNginx.configure(ProxyHost, "proxy_host", hydrated);
+  configured.push({
+    id: row.id,
+    domain: route.domain,
+    target: \`\${route.target}:\${route.port}\`,
+    certificateId: certificate?.id || existing?.certificate_id || 0,
+    embedded: Boolean(route.advancedConfig),
+  });
+}
+
+await ProxyHost.knex().destroy();
+console.log(JSON.stringify({ ok: true, certificateId: certificate?.id || null, configured }, null, 2));
+`;
+}
+
 function printSharedProxyInstructions(values, stacks) {
   const routes = proxyRoutesForStacks(values, stacks);
   if (!routes.length) return;
@@ -744,6 +902,86 @@ async function installCommand(args) {
     composeFiles: rendered.composeFiles,
     dryRun: false,
   });
+
+  if (stacks.includes("chatwoot") && stacks.includes("kanban")) {
+    console.log("");
+    console.log(`Proximo passo: tork-automation embed-chatwoot --installDir ${installDir}`);
+  }
+}
+
+async function embedChatwootCommand(args) {
+  const installDir = path.resolve(String(args.flags.installDir || defaultInstallDir));
+  const dryRun = Boolean(args.flags.dryRun);
+  const env = await readEnv(installDir);
+  const state = await readState(installDir);
+  const composeFiles = await composeFilesForInstallDir(installDir);
+  const stacks = state.stacks || stackNamesFromComposeFiles(composeFiles);
+
+  if (!Object.keys(env).length) {
+    throw new Error(`Nao encontrei .env em ${installDir}. Rode install antes de embed-chatwoot.`);
+  }
+  if (!stacks.includes("chatwoot") || !stacks.includes("kanban")) {
+    throw new Error("Embed exige uma instalacao com Chatwoot e Kanban.");
+  }
+  if (!env.KANBAN_DOMAIN || !env.CHATWOOT_DOMAIN || !env.CLIENT_ID) {
+    throw new Error("Dados de dominio incompletos no .env da instalacao.");
+  }
+
+  const routes = proxyRoutesForStacks(env, stacks).map((route) => {
+    if (route.domain === env.CHATWOOT_DOMAIN) {
+      return {
+        ...route,
+        advancedConfig: chatwootEmbedAdvancedConfig(env.KANBAN_DOMAIN),
+      };
+    }
+    return route;
+  });
+  const proxyContainer = args.flags.proxyContainer || detectedProxyContainers()[0];
+  const useSsl = !boolFlag(args.flags.noSsl, false);
+
+  panel("Embed Kanban no Chatwoot", [
+    `Instalacao: ${installDir}`,
+    `Proxy: ${proxyContainer || "nao encontrado"}`,
+    `Kanban: https://${env.KANBAN_DOMAIN}`,
+    `Chatwoot: https://${env.CHATWOOT_DOMAIN}`,
+    `SSL: ${useSsl ? "emitir/reutilizar via NPM" : "nao configurar"}`,
+  ]);
+
+  for (const route of routes) {
+    console.log(`- ${route.domain} -> http://${route.target}:${route.port}${route.advancedConfig ? " + embed" : ""}`);
+  }
+
+  if (!proxyContainer) {
+    throw new Error("Nao encontrei container do Nginx Proxy Manager. Use --proxyContainer nome-do-container.");
+  }
+
+  if (dryRun) {
+    console.log("");
+    console.log("[dry-run] configuraria Proxy Hosts no Nginx Proxy Manager");
+    console.log(`[dry-run] injetaria script: https://${env.KANBAN_DOMAIN}/dashboard-script.js`);
+    return;
+  }
+
+  const scriptPath = path.join(os.tmpdir(), `tork-npm-embed-${Date.now()}.mjs`);
+  const containerScriptPath = `/tmp/${path.basename(scriptPath)}`;
+  await fs.writeFile(scriptPath, npmProxyProvisionScript({ routes, useSsl }), { mode: 0o600 });
+
+  try {
+    run("docker", ["cp", scriptPath, `${proxyContainer}:${containerScriptPath}`]);
+    run("docker", ["exec", proxyContainer, "node", containerScriptPath]);
+  } finally {
+    await fs.rm(scriptPath, { force: true });
+    spawnSync("docker", ["exec", proxyContainer, "rm", "-f", containerScriptPath], { stdio: "ignore" });
+  }
+
+  await writeState(installDir, {
+    embeddedChatwoot: true,
+    embeddedChatwootAt: new Date().toISOString(),
+    embeddedChatwootProxyContainer: proxyContainer,
+    embeddedChatwootScriptUrl: `https://${env.KANBAN_DOMAIN}/dashboard-script.js`,
+  });
+
+  console.log("Embed aplicado no Chatwoot.");
 }
 
 async function statusCommand(args) {
@@ -1004,7 +1242,8 @@ async function wizardCommand(args) {
   const hasSharedProxy = proxyContainers.length > 0;
 
   try {
-    panel("Tork Automation", [
+    banner("Assistente visual para preparar uma VPS do zero");
+    panel("Ambiente", [
       `Assistente visual para preparar uma VPS do zero. v${cliVersion}`,
       "Instala clientes isolados com Docker Compose, rede e secrets proprios.",
       `Dominio base padrao: ${defaultBaseDomain}`,
@@ -1321,21 +1560,23 @@ async function menuCommand(args) {
   const rl = await createPromptSession();
   let choice = "";
   try {
-    panel("Tork Automation", [
+    banner("Painel visual para instalar, atualizar e operar clientes");
+    panel("Menu Principal", [
       "1. Assistente visual de instalacao/configuracao da VPS",
       "2. Configurar novo cliente nesta VPS",
       "3. Instalar stack completa em VPS zerada",
       "4. Instalar apenas Kanban",
       "5. Instalar Chatwoot + Kanban",
       "6. Instalar n8n",
-      "7. Ver status",
-      "8. Backup",
-      "9. Update",
-      "10. Rollback",
-      "11. Enviar heartbeat",
-      "12. Criar chave na central",
-      "13. Listar central",
-      "14. Sair",
+      "7. Embedar Kanban no Chatwoot",
+      "8. Ver status",
+      "9. Backup",
+      "10. Update",
+      "11. Rollback",
+      "12. Enviar heartbeat",
+      "13. Criar chave na central",
+      "14. Listar central",
+      "15. Sair",
     ]);
     choice = await rl.question("Selecione uma opcao: ");
   } finally {
@@ -1348,13 +1589,14 @@ async function menuCommand(args) {
   if (choice === "4") return installCommand({ ...args, install: ["kanban"] });
   if (choice === "5") return installCommand({ ...args, install: ["chatwoot", "kanban"] });
   if (choice === "6") return installCommand({ ...args, install: ["n8n"] });
-  if (choice === "7") return statusCommand(args);
-  if (choice === "8") return backupCommand(args);
-  if (choice === "9") return updateCommand(args);
-  if (choice === "10") return rollbackCommand({ ...args, flags: { ...args.flags, yes: true } });
-  if (choice === "11") return heartbeatCommand(args);
-  if (choice === "12") return centralCreateKeyCommand(args);
-  if (choice === "13") return centralListCommand(args);
+  if (choice === "7") return embedChatwootCommand(args);
+  if (choice === "8") return statusCommand(args);
+  if (choice === "9") return backupCommand(args);
+  if (choice === "10") return updateCommand(args);
+  if (choice === "11") return rollbackCommand({ ...args, flags: { ...args.flags, yes: true } });
+  if (choice === "12") return heartbeatCommand(args);
+  if (choice === "13") return centralCreateKeyCommand(args);
+  if (choice === "14") return centralListCommand(args);
   return undefined;
 }
 
@@ -1362,6 +1604,7 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   if (args.command === "install") return installCommand(args);
   if (args.command === "status") return statusCommand(args);
+  if (args.command === "embed-chatwoot") return embedChatwootCommand(args);
   if (args.command === "backup") return backupCommand(args);
   if (args.command === "restore") return restoreCommand(args);
   if (args.command === "update") return updateCommand(args);

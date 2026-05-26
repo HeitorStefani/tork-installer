@@ -177,6 +177,18 @@ const updateOutput = run([
 ]);
 assert(updateOutput.includes("[dry-run] docker compose"), "update dry-run must show docker compose plan");
 
+const embedOutput = run([
+  "embed-chatwoot",
+  "--installDir",
+  installDir,
+  "--dryRun",
+  "--proxyContainer",
+  "nginx-proxy",
+]);
+assert(embedOutput.includes("Embed Kanban no Chatwoot"), "embed dry-run must render embed panel");
+assert(embedOutput.includes("dashboard-script.js"), "embed dry-run must reference the Kanban dashboard script");
+assert(embedOutput.includes("+ embed"), "embed dry-run must mark Chatwoot route as embedded");
+
 const rollbackOutput = run([
   "rollback",
   "--installDir",
